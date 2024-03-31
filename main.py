@@ -7,6 +7,7 @@ from utils import*
 from plot_loss import*
 from train import train, validate
 from data_organizer import FlowerLoader
+from early_stopping import EarlyStopping
 
 import torch
 from torch import nn
@@ -19,7 +20,7 @@ from torch.utils.data import DataLoader
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 EPOCHS = 5
 BATCH = 10
-LEARNING_RATE = 0.00001
+LEARNING_RATE = 0.0001
 LOAD_MODEL = True
 INDEXES = {0: 'Daisy', 1: 'Rose', 2: 'Tulip', 3: 'Dandelion', 4: 'Sunflower'}
 
@@ -48,30 +49,35 @@ losses = {"Train loss": [], "Test loss": []}
 
 #%%
 # Early stop implementation
-# es = EarlyStopping(patience=10)
+es = EarlyStopping(patience=1, threshold = 1)
 
 #%%
+continue_train = True
 
-for epoch in range(EPOCHS):
-    checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
-    
-    train_info = train(model=model, dataloader=training_data, loss_func=loss_func, optimizer=optimizer, epoch = epoch, epochs = EPOCHS, device=DEVICE)
-    val_loss, val_accuracy = validate(model=model, dataloader=val_data, device = DEVICE, loss_func=loss_func)
-    
-    losses["Train loss"].append(train_info)
-    losses["Test loss"].append(val_loss)
-    
-    print(f"""\nFor epoch {epoch + 1}:
-    Train Loss = {train_info:.4f}
-    Validation Loss = {val_loss:.4f}
-    Validation Accuracy = {val_accuracy:.2f}%\n
-    """)
-    
-    scheduler(val_loss).step()
-    
-    model_save(checkpoint, file_path = f"{os.getcwd()}/data/saves/model/model_checkpoint_{EPOCHS}_epochs_BCELoss.pth.tar")
+while continue_train:
+    for epoch in range(EPOCHS):
+        checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
 
+        train_info = train(model=model, dataloader=training_data, loss_func=loss_func, optimizer=optimizer, epoch = epoch, epochs = EPOCHS, device=DEVICE)
+        val_loss, val_accuracy = validate(model=model, dataloader=val_data, device = DEVICE, loss_func=loss_func)
+
+        losses["Train loss"].append(train_info)
+        losses["Test loss"].append(val_loss)
+
+        print(f"""\nFor epoch {epoch + 1}:
+        Train Loss = {train_info:.4f}
+        Validation Loss = {val_loss:.4f}
+        Validation Accuracy = {val_accuracy:.2f}%\n
+        """)
+
+        scheduler(val_loss).step()
+        continue_train = es(model=model, val_loss=val_loss)
+    
+        if not continue_train:
+            model_save(checkpoint, file_path = f"{os.getcwd()}/data/saves/model/model_checkpoint_{EPOCHS}_epochs_BCELoss.pth.tar")
+            plot_loss(losses_dict=losses, figsave_path=f"{os.getcwd()}/data/saves/graphs")
+
+            break
 
 
 #%%
-plot_loss(losses_dict=losses, figsave_path=f"{os.getcwd()}/data/saves/graphs")
